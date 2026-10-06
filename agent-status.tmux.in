@@ -1,0 +1,40 @@
+# tmux-agent-colors: colour each window box by the state of its Claude Code / Codex panes.
+#
+# TEMPLATE. install.sh writes agent-status.tmux from this file, substituting
+#   @PYTHON@  the python3 found on PATH at install time (tmux's own run-shell PATH is minimal)
+#   @ROOT@    the directory this repository is checked out in
+# Edit THIS file (colours etc.) and re-run install.sh; the generated file is overwritten.
+#
+# State is written to @as_* pane options by agent_state.py (agent hooks + a small poller);
+# this file only renders it and starts the poller.
+#
+# Per-pane letter (@as_render):
+#   Q  a question or approval is waiting for you
+#   B  thinking, or waiting on background work / a Monitor, or just finished and settling
+#   D  finished and the window has not been visited since
+#   I  idle and already seen
+#   P  agent present but its state (or outstanding work) is not known yet
+# Window rule, first match wins: any Q -> violet; any B -> yellow; any P -> blue (unknown
+# blocks green); any D -> dark green; any I -> blue; no agent -> default status colours.
+
+# ---- colours: edit these four lines ----
+set -g @as_style_q '#[bg=colour135,fg=colour231,bold]'   # violet
+set -g @as_style_b '#[bg=colour220,fg=colour16]'          # yellow
+set -g @as_style_d '#[bg=colour22,fg=colour231]'          # dark green
+set -g @as_style_i '#[bg=colour27,fg=colour231]'          # blue
+
+# Letters of every pane in the window, concatenated (non-agent panes contribute nothing).
+set -g @as_letters '#{P:#{@as_render}}'
+set -g @as_style '#{?#{m:*Q*,#{E:@as_letters}},#{E:@as_style_q},#{?#{m:*B*,#{E:@as_letters}},#{E:@as_style_b},#{?#{m:*P*,#{E:@as_letters}},#{E:@as_style_i},#{?#{m:*D*,#{E:@as_letters}},#{E:@as_style_d},#{?#{m:*I*,#{E:@as_letters}},#{E:@as_style_i},#[default]}}}}}'
+
+set -g window-status-format         '#{E:@as_style} #I:#W#{?window_flags,#{window_flags}, }#[default]'
+set -g window-status-current-format '#{E:@as_style}#[bold] #I:#W#{?window_flags,#{window_flags}, }#[default]'
+
+# Visiting a window acknowledges finished panes (dark green -> blue). The poller also does this
+# every pass, so window switches that bypass select-window are caught within a few seconds.
+set-hook -g after-select-window 'run-shell -b "@PYTHON@ @ROOT@/agent_state.py ack"'
+
+# Poller: presence, process identity, reconciliation against Claude's session files and Codex
+# rollout logs, background-job tracking, settle timer, visit acknowledgement. Locked per tmux
+# socket so re-sourcing never doubles it.
+run-shell -b '@PYTHON@ @ROOT@/agent_state.py daemon --socket "#{socket_path}"'
