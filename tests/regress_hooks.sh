@@ -10,7 +10,9 @@ tmux list-sessions >/dev/null 2>&1 || { echo "no tmux server running" >&2; exit 
 P=$(tmux new-window -d -P -F '#{pane_id}' -n tac-test)
 trap 'tmux kill-window -t "$P" 2>/dev/null' EXIT
 H() { printf '%s' "$2" | TMUX_PANE=$P "$ROOT/agent_state.py" "$1"; }
-show() { echo "-- $1"; tmux show-options -p -t "$P" | grep -E 'as_(render|busy|bg|jobs|replied|asking|calls|finished_at)' | tr '\n' ' '; echo; }
+# grep exits 1 when a pane has no state left (e.g. after SessionEnd); that is a valid result,
+# not an error, so do not let pipefail abort the script there.
+show() { echo "-- $1"; { tmux show-options -p -t "$P" | grep -E 'as_(render|busy|bg|jobs|replied|asking|calls|finished_at)' || true; } | tr '\n' ' '; echo; }
 
 echo "=== claude: turn, background task, finish ==="
 H claude-hook '{"hook_event_name":"SessionStart","session_id":"s1","source":"startup"}'; show "SessionStart (expect render I)"
